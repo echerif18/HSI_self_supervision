@@ -1,0 +1,211 @@
+import sys
+import os
+import warnings
+warnings.filterwarnings('ignore')  # ignore warnings, like ZeroDivision
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, project_root)
+
+from src.utils_data import *
+from src.transformation_utils import *
+from src.utils_all import *
+from src.GAN.SrGAN_RTM_trainer import *
+
+from sklearn.model_selection import train_test_split
+from datetime import datetime
+import glob
+import gc
+
+
+# Check if GPU is available
+if torch.cuda.is_available():
+    # Set the device to GPU
+    device = torch.device("cuda")
+    print("GPU is available. Using GPU for computation.")
+else:
+    # If GPU is not available, fall back to CPU
+    device = torch.device("cpu")
+    print("GPU is not available. Using CPU for computation.")
+
+
+# Get the current date and time
+current_datetime = datetime.now()
+
+# Format the date and time in YYMMDD_HHMM format
+formatted_datetime = current_datetime.strftime("%y%m%d_%H%M")
+
+seed = 140 #random.randint(0, 500)
+seed_all(seed=seed) ###155
+
+path_save = '/home/mila/e/eya.cherif/scratch/Gans_models/'
+project = 'Gan_wandb_test'
+
+lr = 1e-4
+n_epochs = 500
+ls_tr = ["cab", "cw", "cm", "LAI", "cp", "cbc", "car", "anth"]
+batch_size = 128  # This should match the batch size for unlabeled data
+
+directory_path = os.path.join(project_root, "Splits")
+file_paths = glob.glob(os.path.join(directory_path, "*.csv"))
+
+path_data_lb = os.path.join(project_root, "Datasets/50SHIFT_all_lb_prosailPro.csv") ##50SHIFT_all_lb_prosailPro 49_all_lb_prosailPro
+
+for percentage_tr in [1, 0.8, 0.6, 0.4, 0.2]: 
+    # Optional: Summarize GPU memory usage
+    print(torch.cuda.memory_summary())
+    
+    run = 'Gan_NoRTM_{}_{}labels_{}'.format(formatted_datetime, percentage_tr*100, seed)
+    checkpoint_dir = os.path.join(path_save, "checkpoints_{}".format(run)) #'./checkpoints'
+    
+    ################ Data ###############
+    db_lb_all = pd.read_csv(path_data_lb, low_memory=False).drop(['Unnamed: 0'], axis=1)   
+    
+    ### external
+    groups = db_lb_all.groupby('dataset')
+    
+    val_ext_idx = list(groups.get_group(32).index)+list(groups.get_group(3).index)+list(groups.get_group(50).index)
+    samples_val_ext = db_lb_all.loc[val_ext_idx,:]
+    db_lb_all.drop(val_ext_idx, inplace=True)
+    
+    X_labeled, y_labeled, _ = data_prep_db(db_lb_all, ls_tr, weight_sample=True)
+    metadata = db_lb_all.iloc[:, :8]  # The metadata (dataset of origin)
+    
+    
+    red_ed = X_labeled.loc[:,750]
+    red_end = X_labeled.loc[:,1300]
+    red1000_ = X_labeled.loc[:,1000]
+    
+    idx = X_labeled[(red_end>red1000_) & (red_ed>red1000_)].index
+    
+    if(len(idx)>0):
+        # X_labeled.loc[idx,:].T.plot(legend=False)
+        X_labeled.drop(idx, inplace=True)
+        y_labeled.drop(idx, inplace=True)
+        metadata.drop(idx, inplace=True)
+    
+    
+    # Split labeled data into train (80%), validation (10%), and test (10%)
+    X_train, X_val= train_test_split(X_labeled, test_size=0.2, stratify=metadata.dataset, random_state=300)
+    
+    y_train = y_labeled.loc[X_train.index,:]
+    y_val = y_labeled.loc[X_val.index,:]
+    
+    meta_train = metadata.loc[X_train.index,:]
+    meta_val = metadata.loc[X_val.index,:]
+    
+    if(percentage_tr<1):
+        X_train, _= train_test_split(X_train, test_size=1-percentage_tr, stratify=meta_train.dataset, random_state=300)
+        
+        y_train = y_train.loc[X_train.index,:]
+        meta_train = meta_train.loc[X_train.index,:]
+
+    # db_tr = balanceData(pd.concat([X_train, y_train], axis=1), meta_train, ls_tr, random_state=300,percentage=1)
+    # X_train = db_tr.loc[:,400:2450]
+    # y_train = db_tr.loc[:,'cab':]
+    # meta_train = db_tr.iloc[:,:8]
+        
+    
+    ######### scaler ######
+    ### transformation in the model 
+    scaler_list = None
+    scaler_model = save_scaler(y_train, standardize=True, scale=True, save=True, dir_n=checkpoint_dir, k='all_{}'.format(100*percentage_tr))
+
+    
+    # Create the dataset
+    train_dataset = SpectraDataset(X_train, y_train, meta_train, augmentation=True, aug_prob=0.8)
+    # Define DataLoader with the custom collate function for fair upsampling
+    train_dataset_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    
+    test_dataset = SpectraDataset(X_train=X_val, y_train=y_val, meta_train=meta_val, augmentation=False)
+    # Create DataLoader for the test dataset
+    valid_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    # # Create the dataset
+    untrain_dataset = MultiFileAugmentedCSVDataset(file_paths, chunk_size=1000, augmentation=True, aug_prob=0.6, scale=False) ## No scaling of spectra
+    unlabeled_dataset_loader = DataLoader(untrain_dataset, batch_size=batch_size, 
+                            shuffle=True
+                           )
+    
+    ################### Model 
+    settings_dict = {
+        'checkpoint_dir': checkpoint_dir,
+        'train_loader': train_dataset_loader,
+        'valid_loader': valid_loader,
+        'unlabeled_loader': unlabeled_dataset_loader,
+        
+        'scaler_model': scaler_model,
+        'n_lb': y_train.shape[1], #8,
+        'input_shape': X_train.shape[1], #1720,
+        'latent_dim': 100,
+        'learning_rate': lr,
+        'weight_decay': 1e-4,
+        
+        'n_epochs': n_epochs,
+        
+        'rtm_D': False,
+        'rtm_G': False,
+        
+        'lambda_fk': 1.0,
+        'lambda_un': 10.0,
+        
+        'labeled_loss_multiplier': 1.0,
+        'matching_loss_multiplier': 1.0,
+        'contrasting_loss_multiplier': 1.0,
+        
+        'gradient_penalty_on': True,
+        'gradient_penalty_multiplier': 10.0,
+        'srgan_loss_multiplier': 1.0,
+        
+        'early_stop': True,
+        'early_stopping': None,
+        'patience': 10,
+        # 'logger': None,
+        'log_epoch': 10,
+        
+        'mean_offset': 0,
+        'normalize_fake_loss': False,
+        'normalize_feature_norm': False,
+        
+        'contrasting_distance_function': nn.CosineEmbeddingLoss(),
+        'matching_distance_function': nn.CosineEmbeddingLoss(),
+        'labeled_loss_function': HuberCustomLoss(threshold=1.0),
+        
+        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    }
+    
+    ### with wandb #####
+    wandb.init(
+        # Set the project where this run will be logged
+        project=project,
+        # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
+        name=f"experiment_{run}",
+        # Track hyperparameters and run metadata
+        config=settings_dict
+        )
+        
+    settings = Settings() ## set the settings first
+    # Update settings using the dictionary
+    settings.update_from_dict(settings_dict)
+    
+    
+    test = SrGAN_RTM(settings) #SrGAN SrGAN_RTM Experiment
+    test.settings.logger = wandb
+    
+    test.dataset_setup()
+    test.model_setup(test.settings.latent_dim, test.settings.input_shape, test.settings.n_lb)
+    # test.prepare_optimizers()
+    test.prepare_optimizers(test.settings.n_epochs)
+    test.gpu_mode()
+    test.train_mode()
+    test.transformation_setup()
+    test.early_stopping_setup()
+    
+    
+    test.train_loop(n_epochs=test.settings.n_epochs) #self, start_epoch=1, n_epochs=200
+
+    # Clean up after training
+    del test
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    print(f"Completed training model {percentage_tr}. GPU memory cleared.\n")
