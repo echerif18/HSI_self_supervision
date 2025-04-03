@@ -125,28 +125,6 @@ def data_prep_db(db_val_lb, ls_tr, weight_sample=False):
     else:
         return val_x, val_y
 
-# def data_prep(minl, gap_fil, Traits, i = len(Traits)-1, w_train=None, multi=False):
-
-#     ##########Testing/validation data preparation (only for the last added trait)#######
-#     if (multi):
-#         train_x = gap_fil.loc[:, minl:]
-#         train_y = gap_fil.loc[train_x.index, Traits[:i + 1]]
-#     else:
-#         train_x = gap_fil.loc[gap_fil[gap_fil[Traits[i]].notnull()].index, minl:]
-#         train_y = gap_fil.loc[train_x.index, Traits[i:i + 1]]
-
-#     if(w_train is not None):
-#         samp_w_tr = samp_w(w_train, train_x)  # >>>>>>samples weights calculation
-#         return train_x, train_y, samp_w_tr
-#     else:
-#         return train_x, train_y
-
-
-# def balanceData(db_train, w_train, Traits, random_state=300,percentage=1):
-#         ### The maximum number of samples within a dataset ##
-#         mx = pd.concat([w_train.reset_index(drop=True),db_train.reset_index(drop=True)], axis=1).groupby('dataset')[Traits].count().max().max()*percentage
-#         fill = pd.concat([w_train.reset_index(drop=True),db_train.reset_index(drop=True)], axis=1).groupby('dataset').sample(n=int(mx), random_state=random_state, replace=True)#.reset_index(drop=True)
-#         return fill
 
 
 def balanceData(db_train, w_train, Traits, random_state=300,percentage=1):
@@ -157,13 +135,6 @@ def balanceData(db_train, w_train, Traits, random_state=300,percentage=1):
         fill = pd.concat([w_train, db_train], axis=1).groupby('dataset').sample(n=int(mx),random_state = random_state,replace=True)#.reset_index(drop=True)
         return fill
 
-# def save_scaler(train_y, save=False, dir_n=None, k=None, standardize=False):
-#     scaler = PowerTransformer(method='box-cox', standardize=standardize).fit(np.array(train_y)) # method='yeo-johnson' box-cox
-#     if save:
-#         if not os.path.exists(dir_n):
-#             os.mkdir(dir_n)
-#         dump(scaler, open(dir_n + '/scaler_{}.pkl'.format(k), 'wb')) 
-#     return scaler
 
 
 def save_scaler(train_y, save=False, dir_n=None, k=None, standardize=False, scale=False):
@@ -236,19 +207,6 @@ def dataaugment(x, betashift=0.05, slopeshift=0.05, multishift=0.05, kind='shift
         # Add the noise to the signal
         return (x.clone() + noise)#.detach()
 
-
-# # Custom transformation class
-# class AugmentationTransform(object):
-#     def __init__(self, augmentation_ratio=0.3, std_dev = 0.02,  kind='noise'):
-#         self.augmentation_ratio = augmentation_ratio
-#         self.std_dev = std_dev
-#         self.kind = kind
-
-#     def __call__(self, sample):
-#         x, y = sample
-#         if random.random() < self.augmentation_ratio:
-#             x = dataaugment(x, kind = self.kind, std_dev = self.std_dev)
-#         return x, y
 
 # Custom transformation class
 class AugmentationTransform(object):
@@ -329,149 +287,6 @@ class DatasetLoader:
         
         # Training DataLoader
         self.train_loader = DataLoader(self.train_dataset, batch_size=batch_size, sampler=sampler_rep, num_workers=0)
-
-
-# class DatasetLoader:
-#     def __init__(
-#         self, 
-#         val_x: Any, 
-#         val_y: Any, 
-#         fr_sup: Any, 
-#         y_sup: Any, 
-#         fr_unsup: Any, 
-#         batch_size: int, 
-#         scaler_list: Optional[PowerTransformer] = None, 
-#         num_workers: int = 0,
-#         sample_with_replacement: bool = True
-#     ):
-#         """
-#         DatasetLoader class to create DataLoaders for validation, training, and unsupervised datasets.
-
-#         Args:
-#             val_x (Any): Validation input features (e.g., DataFrame or NumPy array).
-#             val_y (Any): Validation target labels.
-#             fr_sup (Any): Supervised training input features.
-#             y_sup (Any): Supervised training target labels.
-#             fr_unsup (Any): Unsupervised input features (unlabeled data).
-#             batch_size (int): Batch size for the DataLoader.
-#             scaler_list (Optional[StandardScaler]): Optional scaler for normalizing labels.
-#             num_workers (int): Number of worker threads for data loading (0 for no parallelism).
-#             sample_with_replacement (bool): Whether to sample training data with replacement.
-#         """
-#         self.scaler_list = scaler_list
-#         self.batch_size = batch_size
-#         self.num_workers = num_workers
-#         self.sample_with_replacement = sample_with_replacement
-        
-#         # Create validation DataLoader
-#         self.valid_loader = self._create_loader(val_x, val_y, batch_size, is_train=False)
-
-#         # Create unsupervised DataLoader (without labels)
-#         self.unlabeled_loader = self._create_unlabeled_loader(fr_unsup, batch_size)
-
-#         # Create supervised training DataLoader
-#         self.train_loader = self._create_loader(fr_sup, y_sup, batch_size, is_train=True, fr_unsup=fr_unsup)
-
-#     def _create_loader(
-#         self, 
-#         x_data: Any, 
-#         y_data: Any, 
-#         batch_size: int, 
-#         is_train: bool = False, 
-#         fr_unsup: Optional[Any] = None
-#     ) -> DataLoader:
-#         """
-#         Helper function to create DataLoader for supervised datasets.
-
-#         Args:
-#             x_data (Any): Input features.
-#             y_data (Any): Target labels.
-#             batch_size (int): Batch size.
-#             is_train (bool): Whether this is the training dataset.
-#             fr_unsup (Optional[Any]): Unsupervised data (used for matching samples if sampling with replacement).
-
-#         Returns:
-#             DataLoader: The DataLoader object for the dataset.
-#         """
-#         # Convert data to tensors
-#         x_tensor = torch.tensor(x_data.values, dtype=torch.float).unsqueeze(dim=1)
-#         y_tensor = self._transform_labels(y_data)
-        
-#         # Create the dataset
-#         dataset = TensorDataset(x_tensor, y_tensor)
-        
-#         # Apply sampling strategy for training data if requested
-#         if is_train and self.sample_with_replacement:
-#             num_samples = len(fr_unsup) if fr_unsup is not None else len(dataset)
-#             sampler = torch.utils.data.sampler.RandomSampler(dataset, replacement=True, num_samples=num_samples)
-#             return DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=self.num_workers)
-#         else:
-#             return DataLoader(dataset, batch_size=batch_size, shuffle=is_train, num_workers=self.num_workers)
-
-#     def _create_unlabeled_loader(self, x_data: Any, batch_size: int) -> DataLoader:
-#         """
-#         Helper function to create DataLoader for unlabeled datasets.
-
-#         Args:
-#             x_data (Any): Unlabeled input features.
-#             batch_size (int): Batch size.
-
-#         Returns:
-#             DataLoader: The DataLoader object for the unlabeled dataset.
-#         """
-#         x_tensor = torch.tensor(x_data.values, dtype=torch.float).unsqueeze(dim=1)
-#         return DataLoader(x_tensor, batch_size=batch_size, shuffle=True, num_workers=self.num_workers)
-
-#     def _transform_labels(self, y_data: Any) -> torch.Tensor:
-#         """
-#         Helper function to scale target labels if a scaler is provided.
-
-#         Args:
-#             y_data (Any): Target labels.
-
-#         Returns:
-#             torch.Tensor: Scaled or unscaled target labels as a tensor.
-#         """
-#         if self.scaler_list is not None:
-#             return torch.tensor(self.scaler_list.transform(y_data.values), dtype=torch.float)
-#         else:
-#             return torch.tensor(y_data.values, dtype=torch.float)
-
-
-#### for AE_RTM###
-# def infinite_iter(train_dataset_loader, unlabeled_dataset_loader, augmentation=False):
-#     data_loader_itr = iter(train_dataset_loader)
-#     data_loader_un_itr = iter(unlabeled_dataset_loader)
-    
-#     while True:
-#         try:
-#             # Attempt to fetch the next batch from each iterator
-#             unlabeled_examples = next(data_loader_un_itr)
-#             labeled_examples, labels = next(data_loader_itr)
-            
-#             #### in the training ###
-#             if augmentation:
-#                 kind_option = ['shift', 'noise']
-#                 kind = np.random.choice(kind_option, 1)[0]
-                
-#                 transform = AugmentationTransform(augmentation_ratio=0.3, std_dev=0.01, kind=kind)
-#                 labeled_examples = transform((labeled_examples))
-            
-#             shape = (len(unlabeled_examples), labels.shape[1])
-#             # Create a tensor filled with NaN values
-#             nan_tensor = torch.full(shape, float('nan'))
-            
-#             samples = torch.cat([labeled_examples, unlabeled_examples])
-#             samples_lb = torch.cat([labels, nan_tensor])
-            
-#             yield samples, samples_lb
-            
-#         except StopIteration:
-#             # Reset the iterator if it's exhausted
-#             break
-#             # data_loader_itr = iter(train_dataset_loader)
-#             # data_loader_un_itr = iter(unlabeled_dataset_loader)
-
 
 
 def infinite_iter(train_dataset_loader, unlabeled_dataset_loader):
@@ -971,3 +786,92 @@ class MultiFileAugmentedCSVDataset(Dataset):
     def _add_noise(self, x_tensor, std=0.01):
         noise = torch.randn_like(x_tensor) * std
         return x_tensor + noise
+    
+
+
+
+
+
+import pandas as pd
+import os
+import glob
+import math
+
+def split_csvs_with_proportions_sequential(input_folder, output_folder, num_splits=20, chunk_size=10000):
+    """
+    Split multiple CSV files into specified number of splits using proportions, processing one dataset at a time.
+
+    Parameters:
+        input_folder (str): Path to folder containing input CSV files.
+        output_folder (str): Path to folder for saving output CSV files.
+        num_splits (int): Number of output files (splits) to create.
+        chunk_size (int): Number of rows to process at a time.
+    """
+    os.makedirs(output_folder, exist_ok=True)  # Ensure output folder exists
+
+    # Step 1: Calculate total rows and proportions
+    total_rows = 0
+    file_row_counts = {}
+    for file in glob.glob(os.path.join(input_folder, "*.csv")):
+        row_count = sum(1 for _ in open(file)) - 1  # Exclude header
+        file_row_counts[file] = row_count
+        total_rows += row_count
+
+    print(f"Total rows: {total_rows}")
+    print(f"File row counts: {file_row_counts}")
+
+    # Calculate target rows per split
+    base_split_size = total_rows // num_splits
+    remainder = total_rows % num_splits
+    split_sizes = [base_split_size + (1 if i < remainder else 0) for i in range(num_splits)]
+
+    print(f"Split sizes (with remainder distributed): {split_sizes}")
+
+    # Step 2: Prepare split files
+    split_files = [os.path.join(output_folder, f"split_{i + 1}.csv") for i in range(num_splits)]
+    split_counters = [0] * num_splits
+    headers_written = [False] * num_splits
+
+    # Step 3: Process each file sequentially
+    for file, file_row_count in file_row_counts.items():
+        print(f"Processing file: {file}")
+
+        # Calculate the proportion of rows for this file in each split
+        file_proportions = [math.floor((file_row_count / total_rows) * size) for size in split_sizes]
+        extra_rows = file_row_count - sum(file_proportions)
+
+        # Distribute remaining rows due to rounding
+        for i in range(extra_rows):
+            file_proportions[i % num_splits] += 1
+
+        print(f"Rows allocated to each split for {file}: {file_proportions}")
+
+        # Distribute rows across splits
+        for chunk in pd.read_csv(file, chunksize=chunk_size):
+            shuffled_chunk = chunk.sample(frac=1, random_state=42)  # Shuffle the chunk
+            chunk_idx = 0
+
+            for i, rows_to_take in enumerate(file_proportions):
+                if rows_to_take == 0:
+                    continue
+
+                rows_available = len(shuffled_chunk) - chunk_idx
+                rows_to_write = min(rows_available, rows_to_take)
+
+                if rows_to_write > 0:
+                    buffer = shuffled_chunk.iloc[chunk_idx:chunk_idx + rows_to_write]
+                    with open(split_files[i], "a") as f:
+                        buffer.to_csv(f, index=False, header=not headers_written[i])
+                    headers_written[i] = True
+                    split_counters[i] += len(buffer)
+                    chunk_idx += rows_to_write
+                    file_proportions[i] -= rows_to_write
+
+                if chunk_idx >= len(shuffled_chunk):
+                    break
+
+    # Final output
+    print("Splitting complete!")
+    for i, split_file in enumerate(split_files):
+        print(f"Split {i + 1}: {split_counters[i]} rows written to {split_file}")
+        # assert split_counters[i] == split_sizes[i], f"Split {i + 1} size mismatch: Expected {split_sizes[i]}, Got {split_counters[i]}"
